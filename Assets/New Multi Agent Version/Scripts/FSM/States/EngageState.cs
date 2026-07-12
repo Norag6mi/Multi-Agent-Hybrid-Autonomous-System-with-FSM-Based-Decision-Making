@@ -26,6 +26,8 @@ public class EngageState : BaseState<AgentState>
     private float maxEngageRange;
     private float optimalRange;
 
+    private CombatMovementController movementController;
+
     private float randomizedThreshold;
 
     public EngageState(AgentFSM fsm) : base(AgentState.Engage)
@@ -38,26 +40,30 @@ public class EngageState : BaseState<AgentState>
 
     public override void EnterState()
     {
+        movementController = fsm.GetComponent<CombatMovementController>();
 
-        // Pick a threshold around the base value (e.g., if base is 0.3, this picks between 0.25 and 0.35)
-        randomizedThreshold = healthCriticalPercent + Random.Range(-0.05f, 0.05f);
-
+        randomizedThreshold =
+            healthCriticalPercent + Random.Range(-0.05f, 0.05f);
 
         hasBroadcast = false;
         currentTarget = fsm.AwarenessModel.currentTarget;
 
-        // Force immediate stop — no waiting for walk animation
-        fsm.Navigation.StopImmediate();
-        
-        // Force speed to 0 in animator immediately
+        // Let movement controller handle movement stopping
+        if (movementController != null)
+        {
+            movementController.StopImmediate();
+            
+        }
+
         AgentAnimator agentAnim = fsm.GetComponentInChildren<AgentAnimator>();
-        if (agentAnim != null) agentAnim.StopAll();
+        if (agentAnim != null)
+            agentAnim.StopAll();
 
         SetCombatTarget(currentTarget);
         BroadcastThreat();
 
         Debug.Log($"[STATE] {fsm.gameObject.name} → ENGAGE " +
-                  $"(Target: {(currentTarget != null ? currentTarget.name : "NONE")})");
+                $"(Target: {(currentTarget != null ? currentTarget.name : "NONE")})");
     }
 
     public override void UpdateState()
@@ -85,7 +91,8 @@ public class EngageState : BaseState<AgentState>
         // Priority 3: Already healing? Then just wait (This is already in your script)
         if (combat.IsHealing())
         {
-            fsm.Navigation.LookAt(currentTarget);
+            if (movementController != null)
+                movementController.LookAt(currentTarget);
             return;
         }
 
@@ -109,7 +116,8 @@ public class EngageState : BaseState<AgentState>
         // Priority 5: Reloading — face target and wait
         if (combat.IsReloading())
         {
-            fsm.Navigation.LookAt(currentTarget);
+            if (movementController != null)
+                movementController.LookAt(currentTarget);
             return;
         }
 
@@ -121,27 +129,32 @@ public class EngageState : BaseState<AgentState>
             return;
         }
 
-        // Priority 7: Too far — pursue
-        float distToTarget = fsm.Navigation.DistanceTo(currentTarget);
-        if (distToTarget > maxEngageRange)
+        bool canShoot = false;
+
+        if (movementController != null)
         {
-            combat.StopAttack();
-            fsm.Navigation.Pursue(currentTarget, optimalRange);
-            fsm.Navigation.LookAt(currentTarget);
-            return;
+            canShoot = movementController.HandleCombatMovement(
+                currentTarget,
+                optimalRange,
+                maxEngageRange);
         }
 
-        // Priority 8: In range — stop, face target, shoot
-        fsm.Navigation.Stop();
-        fsm.Navigation.LookAt(currentTarget, 10f);
-        combat.StartAttack();
+        if (canShoot)
+        {
+            combat.StartAttack();
+        }
+        else
+        {
+            combat.StopAttack();
+        }
     }
 
     public override void ExitState()
     {
         if (fsm.Identity.Combat != null)
             fsm.Identity.Combat.StopAttack();
-        fsm.Navigation.Stop();
+        if (movementController != null)
+            movementController.StopMovement();
     }
 
     public override AgentState GetNextState()

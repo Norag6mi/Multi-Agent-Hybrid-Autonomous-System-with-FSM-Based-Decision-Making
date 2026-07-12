@@ -17,11 +17,13 @@ public class AgentFSM : StateManager<AgentState>
     [HideInInspector] public NavigationController Navigation;
     [HideInInspector] public PatrolRoute Patrol;
 
-    private GameObject stateIndicator;
+    //private GameObject stateIndicator;
 
-    public GameObject StateIndicator => stateIndicator; // new in command integration
+    //public GameObject StateIndicator => stateIndicator; // new in command integration
 
-    private Renderer indicatorRenderer;
+    //private Renderer indicatorRenderer;
+
+
     private bool deathHandled = false;
 
     // Tracks health between frames to detect damage
@@ -36,7 +38,19 @@ public class AgentFSM : StateManager<AgentState>
 
         States.Add(AgentState.Patrol, new PatrolState(this));
         States.Add(AgentState.Alert, new AlertState(this));
-        States.Add(AgentState.Engage, new EngageState(this));
+        //OLD
+        //States.Add(AgentState.Engage, new EngageState(this));
+        //NEW
+        //States.Add(AgentState.Engage, new ES2(this));
+        //BRAND NEW
+        if (Identity.Faction == FactionType.Beta)
+        {
+            States.Add(AgentState.Engage, new EngageState(this));
+        }
+        else
+        {
+            States.Add(AgentState.Engage, new ES2(this));
+        }
         States.Add(AgentState.Dead, new DeadState(this));
 
         CurrentState = States[AgentState.Patrol];
@@ -47,7 +61,7 @@ public class AgentFSM : StateManager<AgentState>
             lastKnownHealth = Identity.Combat.GetCurrentHealth();
         }
 
-        CreateStateIndicator();
+        //CreateStateIndicator();
         base.Start();
     }
 
@@ -64,7 +78,7 @@ public class AgentFSM : StateManager<AgentState>
 
         DetectDamage();
         base.Update();
-        UpdateStateIndicator();
+        //UpdateStateIndicator();
     }
 
     /// <summary>
@@ -149,9 +163,9 @@ public class AgentFSM : StateManager<AgentState>
         {
             Identity.Combat.OnDeathEvent -= OnAgentDeath;
         }
-        if (stateIndicator != null) Destroy(stateIndicator);
+        //if (stateIndicator != null) Destroy(stateIndicator);
     }
-
+/*
     private void CreateStateIndicator()
     {
         stateIndicator = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -180,6 +194,7 @@ public class AgentFSM : StateManager<AgentState>
             _ => Color.white
         };
     }
+    */
 
     public void ResetFSM()
     {
@@ -249,7 +264,7 @@ public class AgentFSM : StateManager<AgentState>
         CurrentState = States[AgentState.Patrol];
         CurrentState.EnterState();
 
-        UpdateStateIndicator();
+        //UpdateStateIndicator();
 
         Debug.Log($"[FSM RESET] {gameObject.name} -> Patrol");
     }

@@ -3,7 +3,10 @@
 --- !u!78 &1
 TagManager:
   serializedVersion: 3
-  tags: []
+  tags:
+  - CinemachineTarget
+  - Object
+  - Player2
   layers:
   - Default
   - TransparentFX
@@ -15,7 +18,7 @@ TagManager:
   - Enemy
   - Agent
   - Player
-  - 
+  - Hitbox
   - 
   - 
   - 
@@ -43,3 +46,4 @@ TagManager:
     locked: 0
   m_RenderingLayers:
   - Default
+  m_MigratedRenderPipelines: []

@@ -47,5 +47,6 @@ public class DeathHandler : MonoBehaviour
         }
 
         Debug.Log("Character fully disabled after death.");
+        Destroy(gameObject);
     }
 }

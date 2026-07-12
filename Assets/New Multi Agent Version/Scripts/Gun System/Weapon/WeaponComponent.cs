@@ -22,7 +22,6 @@ public class WeaponComponent : MonoBehaviour
     private void Awake()
     {
         animatorBridge = GetComponent<CharacterAnimatorBridge>();
-
         Model = new WeaponModel(magazineSize, fireRate, reloadTime);
     }
 
@@ -32,21 +31,11 @@ public class WeaponComponent : MonoBehaviour
         {
             gun = Instantiate(gun);
             gun.Initialize(muzzlePoint, this);
-
         }
     }
 
-    // public void TryShoot()
-    // {
-    //     if (!Model.CanShoot()) return;
-
-    //     animatorBridge.PlayShoot();
-    // }
-
-
-    //Autoshoot
-
-        public void TryStartFiring()
+    // --- Firing control ---
+    public void TryStartFiring()
     {
         if (!Model.CanShoot()) return;
 
@@ -60,27 +49,47 @@ public class WeaponComponent : MonoBehaviour
         animatorBridge.SetFiring(false);
     }
 
-
-
+    // Updated Fire method using AwarenessModel target
     public void Fire()
     {
-        if (!isFiring) return;
-        if (!Model.CanShoot()) return;
+        if (!isFiring || !Model.CanShoot()) return;
+
+        // Get current target from AwarenessModel
+        AwarenessModel awareness = GetComponent<AwarenessModel>();
+        Transform target = (awareness != null) ? awareness.currentTarget : null;
+
+        if (target != null)
+        {
+            FireAtTarget(target);
+        }
+        else
+        {
+            // Optional: fire straight forward if no target
+            Vector3 direction = muzzlePoint.forward;
+            gun.Shoot(direction);
+        }
+    }
+
+    // Shoot at a specific target (handles vertical aiming)
+    public void FireAtTarget(Transform target)
+    {
+        if (!isFiring || !Model.CanShoot() || target == null) return;
 
         Model.ConsumeAmmo();
 
+        // Metrics logging
         AgentIdentity identity = GetComponent<AgentIdentity>();
         if (MetricsLogger.Instance != null && identity != null)
             MetricsLogger.Instance.RecordShotFired(identity.agentName);
 
-        Vector3 direction = muzzlePoint.forward;
+        // Calculate shooting direction toward target (aim for chest/head)
+        Vector3 targetPos = target.position + Vector3.up * 1.5f;
+        Vector3 direction = (targetPos - muzzlePoint.position).normalized;
+
         gun.Shoot(direction);
     }
 
-
-
-
-
+    // --- Reload ---
     public void TryReload()
     {
         if (Model.IsReloading) return;
@@ -107,5 +116,4 @@ public class WeaponComponent : MonoBehaviour
         if (animatorBridge != null)
             animatorBridge.SetFiring(false);
     }
-
 }

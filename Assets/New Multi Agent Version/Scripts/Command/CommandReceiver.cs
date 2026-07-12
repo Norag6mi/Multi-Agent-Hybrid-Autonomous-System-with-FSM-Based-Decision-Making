@@ -68,8 +68,8 @@ public class CommandReceiver : MonoBehaviour
 
     private void LateInit()
     {
-        if (fsm.StateIndicator != null)
-            indicatorRenderer = fsm.StateIndicator.GetComponent<Renderer>();
+        //if (fsm.StateIndicator != null)
+            //indicatorRenderer = fsm.StateIndicator.GetComponent<Renderer>();
 
         if (fsm.Patrol == null || fsm.Navigation == null)
             Debug.LogError($"[COMMAND] {gameObject.name}: FSM subsystems still null after delay!");

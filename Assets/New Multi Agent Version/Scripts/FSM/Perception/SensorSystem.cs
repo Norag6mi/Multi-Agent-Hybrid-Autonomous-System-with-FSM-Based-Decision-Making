@@ -73,8 +73,10 @@ public class SensorSystem : MonoBehaviour
             float distance = Vector3.Distance(eyePos, targetPos);
 
             // Line of sight check — raycast for obstacles
-            if (Physics.Raycast(eyePos, dirToTarget, distance, obstacleMask))
-                continue; // Blocked by wall
+            if (!VisibilityUtility.HasLineOfSight(eyePos, targetPos, obstacleMask))
+            {
+                continue;
+            }
 
             // Enemy is visible
             foundEnemy = true;

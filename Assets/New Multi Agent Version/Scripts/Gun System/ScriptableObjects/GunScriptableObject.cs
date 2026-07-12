@@ -1,6 +1,3 @@
-
-
-
 using System.Collections;
 using UnityEngine;
 using UnityEngine.Pool;
@@ -12,11 +9,15 @@ public class GunScriptableObject : ScriptableObject
     public GunType Type;
     public string Name;
 
+    [Header("Weapon Audio")]
+    public AudioClip FireSFX;
+
     public ShootConfigurationScriptableObject ShootConfig;
     public TrailConfigScriptableObject TrailConfig;
 
     private MonoBehaviour activeMonoBehaviour;
     private Transform muzzleTransform;
+    private ParticleSystem muzzleFlash;
 
     private float lastShootTime;
     private ObjectPool<TrailRenderer> trailPool;
@@ -24,11 +25,18 @@ public class GunScriptableObject : ScriptableObject
     [Header("Damage")]
     public int Damage = 10;
 
-
+    // Old initialization (AI compatibility)
     public void Initialize(Transform muzzle, MonoBehaviour owner)
+    {
+        Initialize(muzzle, owner, null);
+    }
+
+    // New initialization (Player + muzzle flash)
+    public void Initialize(Transform muzzle, MonoBehaviour owner, ParticleSystem flash)
     {
         muzzleTransform = muzzle;
         activeMonoBehaviour = owner;
+        muzzleFlash = flash;
 
         lastShootTime = 0;
         trailPool = new ObjectPool<TrailRenderer>(CreateTrail);
@@ -36,7 +44,14 @@ public class GunScriptableObject : ScriptableObject
 
     public void Shoot(Vector3 direction)
     {
-        if (muzzleTransform == null) return;
+        if (muzzleTransform == null)
+            return;
+
+        // Fire Rate Check
+        if (Time.time < lastShootTime + ShootConfig.FireRate)
+            return;
+
+        lastShootTime = Time.time;
 
         Vector3 shootDirection = direction.normalized
             + new Vector3(
@@ -48,6 +63,18 @@ public class GunScriptableObject : ScriptableObject
         shootDirection.Normalize();
 
         Vector3 origin = muzzleTransform.position;
+
+        // Muzzle Flash
+        if (muzzleFlash != null)
+        {
+            muzzleFlash.Play();
+        }
+
+        // Gun Sound
+        if (FireSFX != null)
+        {
+            AudioSource.PlayClipAtPoint(FireSFX, origin, 1f);
+        }
 
         if (Physics.Raycast(origin, shootDirection, out RaycastHit hit, float.MaxValue, ShootConfig.HitMask))
         {
@@ -67,84 +94,131 @@ public class GunScriptableObject : ScriptableObject
         }
     }
 
+    private IEnumerator PlayTrail(Vector3 startPoint, Vector3 endPoint, RaycastHit hit)
+    {
+        TrailRenderer instance = trailPool.Get();
 
-        private IEnumerator PlayTrail(Vector3 startPoint, Vector3 endPoint, RaycastHit hit)
+        instance.gameObject.SetActive(true);
+        instance.transform.position = startPoint;
+
+        yield return null;
+
+        instance.emitting = true;
+
+        float distance = Vector3.Distance(startPoint, endPoint);
+        float remainingDistance = distance;
+
+        while (remainingDistance > 0)
         {
-            TrailRenderer instance = trailPool.Get();
-            instance.gameObject.SetActive(true);
-            instance.transform.position = startPoint;
+            instance.transform.position = Vector3.Lerp(
+                startPoint,
+                endPoint,
+                Mathf.Clamp01(1 - (remainingDistance / distance))
+            );
+
+            remainingDistance -= TrailConfig.SimulationSpeed * Time.deltaTime;
 
             yield return null;
+        }
 
-            instance.emitting = true;
+        instance.transform.position = endPoint;
 
-            float distance = Vector3.Distance(startPoint, endPoint);
-            float remainingDistance = distance;
+        // =====================================================
+        // HIT DETECTION
+        // =====================================================
+        if (hit.collider != null)
+        {
+            HealthComponent health =
+                hit.collider.GetComponentInParent<HealthComponent>();
 
-            while (remainingDistance > 0)
+            if (health != null)
             {
-                instance.transform.position = Vector3.Lerp(
-                    startPoint,
-                    endPoint,
-                    Mathf.Clamp01(1 - (remainingDistance / distance))
-                );
+                // CRITICAL FIX: Fallback to non-generic assignment to eliminate CS0411 permanently
+                AgentIdentity attacker =
+                    activeMonoBehaviour.GetComponent(typeof(AgentIdentity)) as AgentIdentity;
 
-                remainingDistance -= TrailConfig.SimulationSpeed * Time.deltaTime;
-                yield return null;
-            }
+                AgentIdentity victim =
+                    health.GetComponentInParent(typeof(AgentIdentity)) as AgentIdentity;
 
-            instance.transform.position = endPoint;
+                // =================================================
+                // REWARD SYSTEM
+                // =================================================
+                AgentRewardSystem rewardSystem =
+                    activeMonoBehaviour.GetComponent(typeof(AgentRewardSystem)) as AgentRewardSystem;
 
-            if (hit.collider != null)
-            {
-                HealthComponent health = hit.collider.GetComponentInParent<HealthComponent>();
-
-                if (health != null)
+                // =================================================
+                // METRICS
+                // =================================================
+                if (MetricsLogger.Instance != null && attacker != null)
                 {
-                    AgentIdentity attacker = activeMonoBehaviour.GetComponent<AgentIdentity>();
-                    AgentIdentity victim = health.GetComponent<AgentIdentity>();
-
-                    // 1. Record Hit
-                    if (MetricsLogger.Instance != null && attacker != null)
-                    {
-                        MetricsLogger.Instance.RecordShotHit(attacker.agentName);
-                    }
-
-                    bool wasDeadBefore = health.Model.IsDead;
-
-                    // Apply Damage
-                    health.TakeDamage(Damage);
-
-                    // 2. Record Kill (if damage caused death)
-                    if (!wasDeadBefore && health.Model.IsDead)
-                    {
-                        if (MetricsLogger.Instance != null && attacker != null && victim != null)
-                        {
-                            MetricsLogger.Instance.RecordKill(attacker.agentName, victim.agentName);
-                        }
-                    }
+                    MetricsLogger.Instance.RecordShotHit(
+                        attacker.agentName
+                    );
                 }
 
-                SurfaceManager.Instance.HandleImpact(
-                    hit.transform.gameObject,
-                    endPoint,
-                    hit.normal,
-                    ImpactType,
-                    0
-                );
+                bool wasDeadBefore = health.Model.IsDead;
+
+                // =================================================
+                // APPLY DAMAGE
+                // =================================================
+                health.TakeDamage(Damage);
+
+                // =================================================
+                // REWARD HIT
+                // =================================================
+                if (rewardSystem != null)
+                {
+                    rewardSystem.RewardHit(Damage);
+                }
+
+                // =================================================
+                // KILL CHECK
+                // =================================================
+                if (!wasDeadBefore && health.Model.IsDead)
+                {
+                    // Metrics
+                    if (MetricsLogger.Instance != null &&
+                        attacker != null &&
+                        victim != null)
+                    {
+                        MetricsLogger.Instance.RecordKill(
+                            attacker.agentName,
+                            victim.agentName
+                        );
+                    }
+
+                    // Reward kill bonus
+                    if (rewardSystem != null)
+                    {
+                        rewardSystem.RewardKill();
+                    }
+                }
             }
 
-            yield return new WaitForSeconds(TrailConfig.Duration);
-
-            instance.emitting = false;
-            instance.gameObject.SetActive(false);
-            trailPool.Release(instance);
+            // =====================================================
+            // SURFACE IMPACT
+            // =====================================================
+            SurfaceManager.Instance.HandleImpact(
+                hit.transform.gameObject,
+                endPoint,
+                hit.normal           
+            );
         }
+
+        yield return new WaitForSeconds(TrailConfig.Duration);
+
+        instance.emitting = false;
+        instance.gameObject.SetActive(false);
+
+        trailPool.Release(instance);
+    }
 
     private TrailRenderer CreateTrail()
     {
         GameObject instance = new GameObject("Bullet Trail");
-        TrailRenderer trail = instance.AddComponent<TrailRenderer>();
+
+        TrailRenderer trail =
+            instance.AddComponent<TrailRenderer>();
 
         trail.colorGradient = TrailConfig.Color;
         trail.material = TrailConfig.Material;
@@ -153,7 +227,9 @@ public class GunScriptableObject : ScriptableObject
         trail.minVertexDistance = TrailConfig.MinVertexDistance;
 
         trail.emitting = false;
-        trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        trail.shadowCastingMode =
+            UnityEngine.Rendering.ShadowCastingMode.Off;
 
         return trail;
     }
